@@ -279,7 +279,7 @@ cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_c
 int main()
 {
 	// Read cams
-	std::vector<cam> cam_vector = read_cams("data");
+	std::vector<cam> cam_vector = read_cams("res");
 
 	// Test call a CUDA function
 	wrap_test_vectorAdd();

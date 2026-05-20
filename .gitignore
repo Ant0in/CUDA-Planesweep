@@ -1,0 +1,13 @@
+
+# IDE stuff
+/.vscode
+/.idea
+
+# Build stuff
+/build
+/lib
+
+# Python stuff
+/.venv
+/.pytest_cache
+__pycache__
