@@ -1,4 +1,4 @@
-#include "../kernels/main.cuh"
+#include "../kernels/kernel.cuh"
 #include "cam_params.hpp"
 #include "constants.hpp"
 #include "graph.h"
@@ -15,8 +15,13 @@
 
 #define SHRT_MAX 32767
 
-std::vector<cam> read_cams(std::string const &folder)
-{
+/**
+ * @brief Loads all camera images and attaches the hardcoded calibration parameters.
+ * @param folder Folder containing v0.png, v1.png, and friends.
+ * @return Cameras ready for the CPU/CUDA planesweep pipeline.
+ */
+std::vector<cam> read_cams(std::string const &folder) {
+
 	// Init parameters
 	std::vector<params<double>> cam_params_vector = get_cam_params();
 
@@ -50,108 +55,14 @@ std::vector<cam> read_cams(std::string const &folder)
 	// cv::namedWindow("im", cv::WINDOW_NORMAL);
 	// cv::imshow("im", U);
 	// cv::waitKey(0);
+
 }
 
-std::vector<cv::Mat> sweeping_plane(cam const ref, std::vector<cam> const &cam_vector, int window = 3)
-{
-	// Initialization to MAX value
-	// std::vector<float> cost_cube(ref.width * ref.height * ZPlanes, 255.f);
-	std::vector<cv::Mat> cost_cube(ZPlanes);
-	for (int i = 0; i < cost_cube.size(); ++i)
-	{
-		cost_cube[i] = cv::Mat(ref.height, ref.width, CV_32FC1, 255.);
-	}
-
-	// For each camera in the setup (reference is skipped)
-	for (auto &cam : cam_vector)
-	{
-		if (cam.name == ref.name)
-			continue;
-
-		std::cout << "Cam: " << cam.name << std::endl;
-		// For each pixel and candidate: (i) calculate projection index, (ii) calculate cost against reference, (iii) store minimum cost
-		for (int zi = 0; zi < ZPlanes; zi++)
-		{
-			std::cout << "Plane " << zi << std::endl;
-			for (int y = 0; y < ref.height; y++)
-			{
-				for (int x = 0; x < ref.width; x++)
-				{
-					// (i) calculate projection index
-
-					// Calculate z from ZNear, ZFar and ZPlanes (projective transformation) (zi = 0, z = ZFar)
-					double z = ZNear * ZFar / (ZNear + (((double)zi / (double)ZPlanes) * (ZFar - ZNear)));
-
-					// 2D ref camera point to 3D in ref camera coordinates (p * K_inv)
-					double X_ref = (ref.p.K_inv[0] * x + ref.p.K_inv[1] * y + ref.p.K_inv[2]) * z;
-					double Y_ref = (ref.p.K_inv[3] * x + ref.p.K_inv[4] * y + ref.p.K_inv[5]) * z;
-					double Z_ref = (ref.p.K_inv[6] * x + ref.p.K_inv[7] * y + ref.p.K_inv[8]) * z;
-
-					// 3D in ref camera coordinates to 3D world
-					double X = ref.p.R_inv[0] * X_ref + ref.p.R_inv[1] * Y_ref + ref.p.R_inv[2] * Z_ref - ref.p.t_inv[0];
-					double Y = ref.p.R_inv[3] * X_ref + ref.p.R_inv[4] * Y_ref + ref.p.R_inv[5] * Z_ref - ref.p.t_inv[1];
-					double Z = ref.p.R_inv[6] * X_ref + ref.p.R_inv[7] * Y_ref + ref.p.R_inv[8] * Z_ref - ref.p.t_inv[2];
-
-					// 3D world to projected camera 3D coordinates
-					double X_proj = cam.p.R[0] * X + cam.p.R[1] * Y + cam.p.R[2] * Z - cam.p.t[0];
-					double Y_proj = cam.p.R[3] * X + cam.p.R[4] * Y + cam.p.R[5] * Z - cam.p.t[1];
-					double Z_proj = cam.p.R[6] * X + cam.p.R[7] * Y + cam.p.R[8] * Z - cam.p.t[2];
-
-					// Projected camera 3D coordinates to projected camera 2D coordinates
-					double x_proj = (cam.p.K[0] * X_proj / Z_proj + cam.p.K[1] * Y_proj / Z_proj + cam.p.K[2]);
-					double y_proj = (cam.p.K[3] * X_proj / Z_proj + cam.p.K[4] * Y_proj / Z_proj + cam.p.K[5]);
-					double z_proj = Z_proj;
-
-					x_proj = x_proj < 0 || x_proj >= cam.width ? 0 : roundf(x_proj);
-					y_proj = y_proj < 0 || y_proj >= cam.height ? 0 : roundf(y_proj);
-
-					// (ii) calculate cost against reference
-					// Calculating cost in a window
-					float cost = 0.0f;
-					float cc = 0.0f;
-					for (int k = -window / 2; k <= window / 2; k++)
-					{
-						for (int l = -window / 2; l <= window / 2; l++)
-						{
-							if (x + l < 0 || x + l >= ref.width)
-								continue;
-							if (y + k < 0 || y + k >= ref.height)
-								continue;
-							if (x_proj + l < 0 || x_proj + l >= cam.width)
-								continue;
-							if (y_proj + k < 0 || y_proj + k >= cam.height)
-								continue;
-
-							// Y
-							cost += fabs(ref.YUV[0].at<uint8_t>(y + k, x + l) - cam.YUV[0].at<uint8_t>((int)y_proj + k, (int)x_proj + l));
-							// U
-							// cost += fabs(ref.YUV[1].at<uint8_t >(y + k, x + l) - cam.YUV[1].at<uint8_t>((int)y_proj + k, (int)x_proj + l));
-							// V
-							// cost += fabs(ref.YUV[2].at<uint8_t >(y + k, x + l) - cam.YUV[2].at<uint8_t>((int)y_proj + k, (int)x_proj + l));
-							cc += 1.0f;
-						}
-					}
-					cost /= cc;
-
-					//  (iii) store minimum cost (arranged as cost images, e.g., first image = cost of every pixel for the first candidate)
-					// only the minimum cost for all the cameras is stored
-					cost_cube[zi].at<float>(y, x) = fminf(cost_cube[zi].at<float>(y, x), cost);
-				}
-			}
-		}
-	}
-
-	// Visualize costs
-	// for (int zi = 0; zi < ZPlanes; zi++)
-	// {
-	// 	std::cout << "plane " << zi << std::endl;
-	// 	cv::namedWindow("Cost", cv::WINDOW_NORMAL);
-	// 	cv::imshow("Cost", cost_cube.at(zi) / 255.f);
-	// 	cv::waitKey(0);
-	// }
-	return cost_cube;
-}
-
+/**
+ * @brief Cheap depth extraction by picking the lowest cost plane per pixel.
+ * @param cost_cube Vector of cost images, one image for each depth plane.
+ * @return 8-bit depth map where the pixel value is the chosen plane index.
+ */
 cv::Mat find_min(std::vector<cv::Mat> const &cost_cube)
 {
 	const int zPlanes = cost_cube.size();
@@ -179,8 +90,21 @@ cv::Mat find_min(std::vector<cv::Mat> const &cost_cube)
 	return depth;
 }
 
-/*The next two function are used to perform the graph cut on the results
-DO NOT MODIFY THOSE FUNCTIONS - DO NOT TRY TO IMPLEMENT THEM ON THE GPU*/
+/* !! The next two function are used to perform the graph cut on the results
+DO NOT MODIFY THOSE FUNCTIONS - DO NOT TRY TO IMPLEMENT THEM ON THE GPU !!*/
+
+/**
+ * @brief Helper used by the graph-cut refinement to connect neighboring pixels.
+ * @param g Graph object being built for the current depth layer.
+ * @param nodes Per-pixel graph nodes.
+ * @param destPixel Neighbor pixel we connect to.
+ * @param sourcePixel Current pixel.
+ * @param imgSize Image dimensions.
+ * @param m_aiEdgeCost Smoothness costs per label difference.
+ * @param labels Current depth labels.
+ * @param label Candidate label being tested.
+ * @param cost_cur Smoothness cost for the current edge.
+ */
 void depth_estimation_by_graph_cut_sWeight_add_nodes(Graph& g, std::vector<Graph::node_id>& nodes, cv::Size destPixel, cv::Size sourcePixel, cv::Size imgSize, std::vector<double> m_aiEdgeCost, cv::Mat1w labels, int label, double cost_cur) {
 	const int idxSourcePixel = sourcePixel.height * imgSize.width + sourcePixel.width;
 	const int idxDestPixel = destPixel.height * imgSize.width + destPixel.width;
@@ -198,6 +122,11 @@ void depth_estimation_by_graph_cut_sWeight_add_nodes(Graph& g, std::vector<Graph
 		g.add_edge(nodes[idxSourcePixel], nodes[idxDestPixel], cost_cur_temp, cost_cur_temp);
 }
 
+/**
+ * @brief Refines the raw planesweep costs with graph cut, slow but prettier.
+ * @param cost_cube Vector of per-depth cost images coming from the sweep.
+ * @return 8-bit depth map after alpha-expansion-ish graph-cut refinement.
+ */
 cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_cube) {
 	//DO NOT TRY TO IMPLEMENT THIS FUNCTION ON THE GPU
 
@@ -276,15 +205,19 @@ cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_c
 	return depth;
 }
 
-int main()
-{
-	// Read cams
+/**
+ * @brief Program entry point: load cameras, run CUDA planesweep, choose depth, write the image.
+ * @return 0 when everything made it to the end without drama.
+ */
+int main(int argc, char *argv[]) {
+
+	// Read cams from disk
 	std::vector<cam> cam_vector = read_cams("res");
 
-	// Sweeping algorithm for camera 0
-	std::vector<cv::Mat> cost_cube = sweeping_plane_cuda(cam_vector.at(0), cam_vector, 5);
+	// Sweeping algorithm from camera 0
+	std::vector<cv::Mat> cost_cube = PlaneSweepKernel::sweeping_plane_cuda(cam_vector.at(0), cam_vector, 5);
 
-	const bool use_graph_cut = true;
+	const bool use_graph_cut = false;
 	cv::Mat depth = use_graph_cut
 		? depth_estimation_by_graph_cut_sWeight(cost_cube)
 		: find_min(cost_cube);
@@ -295,7 +228,6 @@ int main()
 
 	cv::imwrite("./depth_map.png", depth);
 
-	//printf("%f", depth.at<uchar>(0, 0));
+	return EXIT_SUCCESS;
 
-	return 0;
 }

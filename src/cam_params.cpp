@@ -1,7 +1,11 @@
 #include "cam_params.hpp"
 
-std::vector<params<double>> get_cam_params()
-{
+/**
+ * @brief Builds the hardcoded camera calibration list for the dataset.
+ * @return Camera parameters matching the images in res/, nothing fancy or dynamic here.
+ */
+std::vector<params<double>> get_cam_params() {
+    
     std::vector<params<double>> ret{
         // CAM 0
         params<double>(

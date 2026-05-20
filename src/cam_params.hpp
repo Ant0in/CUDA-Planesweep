@@ -1,6 +1,11 @@
 #pragma once
 #include <vector>
 
+/**
+ * @brief Inverts a 3x3 matrix stored as a flat vector.
+ * @param A Matrix values in row-major order, because tiny matrices do not need a whole library moment.
+ * @return The inverse matrix, also row-major and also tiny.
+ */
 template <typename T>
 const inline std::vector<T> inverseMatrix3x3(std::vector<T> &A)
 {
@@ -29,7 +34,18 @@ struct params
     std::vector<T> K_inv;
     std::vector<T> R_inv;
     std::vector<T> t_inv;
+
+    /**
+     * @brief Empty params object, mostly here so vectors can create cameras before filling them.
+     */
     params(){};
+
+    /**
+     * @brief Stores camera matrices and precomputes the inverse bits we use a lot.
+     * @param _K Intrinsic matrix.
+     * @param _R Rotation matrix.
+     * @param _t Translation vector.
+     */
     params(std::vector<T> _K, std::vector<T> _R, std::vector<T> _t) : K(_K), R(_R), t(_t)
     {
         K_inv = inverseMatrix3x3<double>(K);
@@ -38,4 +54,8 @@ struct params
     };
 };
 
+/**
+ * @brief Returns the hardcoded camera calibration setup for the sample images.
+ * @return One params object per camera, in the same order as v0, v1, v2, v3.
+ */
 std::vector<params<double>> get_cam_params();

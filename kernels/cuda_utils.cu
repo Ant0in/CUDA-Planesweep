@@ -1,0 +1,57 @@
+
+#include "cuda_utils.cuh"
+
+#include <iostream>
+#include <cstdlib>
+
+
+namespace cuda_utils {
+
+    /**
+     * @brief Checks a CUDA call and exits loudly if it failed.
+     * @param err CUDA status code returned by the runtime.
+     */
+    void checkCuda(cudaError_t err) {
+
+        // so i think in the slides it was done with a macro but I'm not sure I like that tbh
+        if (err != cudaSuccess) {
+            std::cerr << "[e] CUDA Error: " << cudaGetErrorString(err) << std::endl;
+            exit(EXIT_FAILURE);
+        }
+
+    }
+
+    /**
+     * @brief Prints the CUDA device info we care about when debugging performance.
+     * It is mostly a tiny sanity check that the program is seeing the GPU we think it is seeing.
+     */
+    void printDeviceInfo() {
+
+        int deviceCount;
+        checkCuda(cudaGetDeviceCount(&deviceCount));
+        std::cout << "[i] Number of CUDA devices: " << deviceCount << std::endl;
+
+        // for each device I'll print some info, but yeah whatever who's rich enough to have multiple gpus lmao
+        // i'm working on a fucking 1060 6gb, what are you expecting like a 5090 or something? im literally broke kekw
+        for (int i = 0; i < deviceCount; ++i) {
+
+            cudaDeviceProp deviceProp;
+            checkCuda(cudaGetDeviceProperties(&deviceProp, i));
+
+            std::cout << "[i] Device " << i << ": " << deviceProp.name << std::endl;
+            std::cout << ">> Total Global Memory: " << deviceProp.totalGlobalMem / (1024 * 1024) << " MB" << std::endl;
+            std::cout << ">> Shared Memory per Block: " << deviceProp.sharedMemPerBlock / 1024 << " KB" << std::endl;
+            std::cout << ">> Registers per Block: " << deviceProp.regsPerBlock << std::endl;
+            std::cout << ">> Warp Size: " << deviceProp.warpSize << std::endl;
+            std::cout << ">> Max Threads per Block: " << deviceProp.maxThreadsPerBlock << std::endl;
+            std::cout << ">> Max Grid Size: (" 
+                      << deviceProp.maxGridSize[0] << ", "
+                      << deviceProp.maxGridSize[1] << ", "
+                      << deviceProp.maxGridSize[2] << ")" 
+                      << std::endl;
+
+        }
+
+    }
+
+}
