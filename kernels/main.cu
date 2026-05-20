@@ -1,9 +1,9 @@
 #include "main.cuh"
 
-#include <cstring>
 #include <cstdio>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -18,6 +18,12 @@ struct DeviceCam
 	float R_inv[9];
 	float t_inv[3];
 };
+
+constexpr int MaxSourceCams = 16;
+
+__constant__ DeviceCam c_ref_cam;
+__constant__ DeviceCam c_src_cams[MaxSourceCams];
+__constant__ unsigned char *c_src_images[MaxSourceCams];
 
 void check_cuda(cudaError_t err, char const *call)
 {
@@ -50,31 +56,19 @@ DeviceCam make_device_cam(cam const &camera)
 	return out;
 }
 
-__global__ void init_cost_cube(float *cost_cube, size_t count, float value)
-{
-	const size_t i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i < count)
-		cost_cube[i] = value;
-}
-
-__global__ void sweep_plane_kernel(
-	unsigned char const *ref_image,
-	unsigned char const *cam_image,
-	float *cost_cube,
-	DeviceCam ref,
-	DeviceCam src,
+__device__ float compute_matching_cost(
+	unsigned char const *__restrict__ ref_image,
+	unsigned char const *__restrict__ src_image,
+	DeviceCam const &ref,
+	DeviceCam const &src,
+	int x,
+	int y,
+	int zi,
 	int z_planes,
 	float z_near,
 	float z_far,
 	int window)
 {
-	const int x = blockIdx.x * blockDim.x + threadIdx.x;
-	const int y = blockIdx.y * blockDim.y + threadIdx.y;
-	const int zi = blockIdx.z;
-
-	if (x >= ref.width || y >= ref.height || zi >= z_planes)
-		return;
-
 	const float z = z_near * z_far / (z_near + (static_cast<float>(zi) / static_cast<float>(z_planes)) * (z_far - z_near));
 
 	const float X_ref = (ref.K_inv[0] * x + ref.K_inv[1] * y + ref.K_inv[2]) * z;
@@ -95,39 +89,83 @@ __global__ void sweep_plane_kernel(
 	x_proj = x_proj < 0.0f || x_proj >= src.width ? 0.0f : roundf(x_proj);
 	y_proj = y_proj < 0.0f || y_proj >= src.height ? 0.0f : roundf(y_proj);
 
-	float cost = 0.0f;
-	float samples = 0.0f;
+	const int src_center_x = static_cast<int>(x_proj);
+	const int src_center_y = static_cast<int>(y_proj);
 	const int radius = window / 2;
 
-	for (int k = -radius; k <= radius; ++k)
+	int l_min = -radius;
+	int l_max = radius;
+	int k_min = -radius;
+	int k_max = radius;
+
+	l_min = x + l_min < 0 ? -x : l_min;
+	l_max = x + l_max >= ref.width ? ref.width - 1 - x : l_max;
+	k_min = y + k_min < 0 ? -y : k_min;
+	k_max = y + k_max >= ref.height ? ref.height - 1 - y : k_max;
+
+	l_min = src_center_x + l_min < 0 ? -src_center_x : l_min;
+	l_max = src_center_x + l_max >= src.width ? src.width - 1 - src_center_x : l_max;
+	k_min = src_center_y + k_min < 0 ? -src_center_y : k_min;
+	k_max = src_center_y + k_max >= src.height ? src.height - 1 - src_center_y : k_max;
+
+	if (l_min > l_max || k_min > k_max)
+		return 255.0f;
+
+	float cost = 0.0f;
+	int samples = 0;
+
+	for (int k = k_min; k <= k_max; ++k)
 	{
-		for (int l = -radius; l <= radius; ++l)
+		const int ref_row = (y + k) * ref.width;
+		const int src_row = (src_center_y + k) * src.width;
+		for (int l = l_min; l <= l_max; ++l)
 		{
-			const int ref_x = x + l;
-			const int ref_y = y + k;
-			const int src_x = static_cast<int>(x_proj) + l;
-			const int src_y = static_cast<int>(y_proj) + k;
-
-			if (ref_x < 0 || ref_x >= ref.width)
-				continue;
-			if (ref_y < 0 || ref_y >= ref.height)
-				continue;
-			if (src_x < 0 || src_x >= src.width)
-				continue;
-			if (src_y < 0 || src_y >= src.height)
-				continue;
-
-			const float ref_value = static_cast<float>(ref_image[ref_y * ref.width + ref_x]);
-			const float src_value = static_cast<float>(cam_image[src_y * src.width + src_x]);
+			const float ref_value = static_cast<float>(ref_image[ref_row + x + l]);
+			const float src_value = static_cast<float>(src_image[src_row + src_center_x + l]);
 			cost += fabsf(ref_value - src_value);
-			samples += 1.0f;
+			++samples;
 		}
 	}
 
-	cost = samples > 0.0f ? cost / samples : 255.0f;
+	return samples > 0 ? cost / static_cast<float>(samples) : 255.0f;
+}
 
-	const size_t idx = (static_cast<size_t>(zi) * ref.height + y) * ref.width + x;
-	cost_cube[idx] = fminf(cost_cube[idx], cost);
+__global__ void sweep_plane_all_cameras_kernel(
+	unsigned char const *__restrict__ ref_image,
+	float *__restrict__ cost_cube,
+	int source_count,
+	int z_planes,
+	float z_near,
+	float z_far,
+	int window)
+{
+	const int x = blockIdx.x * blockDim.x + threadIdx.x;
+	const int y = blockIdx.y * blockDim.y + threadIdx.y;
+	const int zi = blockIdx.z;
+
+	if (x >= c_ref_cam.width || y >= c_ref_cam.height || zi >= z_planes)
+		return;
+
+	float best_cost = 255.0f;
+	for (int src_idx = 0; src_idx < source_count; ++src_idx)
+	{
+		const float cost = compute_matching_cost(
+			ref_image,
+			c_src_images[src_idx],
+			c_ref_cam,
+			c_src_cams[src_idx],
+			x,
+			y,
+			zi,
+			z_planes,
+			z_near,
+			z_far,
+			window);
+		best_cost = fminf(best_cost, cost);
+	}
+
+	const size_t idx = (static_cast<size_t>(zi) * c_ref_cam.height + y) * c_ref_cam.width + x;
+	cost_cube[idx] = best_cost;
 }
 }
 
@@ -183,23 +221,32 @@ std::vector<cv::Mat> sweeping_plane_cuda(cam const &ref, std::vector<cam> const 
 	if (ref.YUV.empty())
 		throw std::runtime_error("Reference camera has no image channels");
 
+	int expected_source_count = 0;
+	for (auto const &camera : cam_vector)
+	{
+		if (camera.name != ref.name)
+			++expected_source_count;
+	}
+	if (expected_source_count == 0)
+		throw std::runtime_error("No source cameras available for CUDA planesweep");
+	if (expected_source_count > MaxSourceCams)
+		throw std::runtime_error("Too many source cameras for CUDA planesweep constant-memory table");
+
 	const size_t pixel_count = static_cast<size_t>(ref.width) * ref.height;
 	const size_t cost_count = pixel_count * ZPlanes;
 
 	cv::Mat ref_y = ref.YUV[0].isContinuous() ? ref.YUV[0] : ref.YUV[0].clone();
 
 	unsigned char *d_ref_image = nullptr;
-	unsigned char *d_cam_image = nullptr;
 	float *d_cost_cube = nullptr;
+	std::vector<unsigned char *> h_src_images;
+	std::vector<DeviceCam> h_src_cams;
+	h_src_images.reserve(expected_source_count);
+	h_src_cams.reserve(expected_source_count);
 
 	CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_ref_image), pixel_count * sizeof(unsigned char)));
 	CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_cost_cube), cost_count * sizeof(float)));
 	CUDA_CHECK(cudaMemcpy(d_ref_image, ref_y.ptr<unsigned char>(), pixel_count * sizeof(unsigned char), cudaMemcpyHostToDevice));
-
-	const int init_block = 256;
-	const int init_grid = static_cast<int>((cost_count + init_block - 1) / init_block);
-	init_cost_cube<<<init_grid, init_block>>>(d_cost_cube, cost_count, 255.0f);
-	CUDA_CHECK(cudaGetLastError());
 
 	const DeviceCam d_ref = make_device_cam(ref);
 	const dim3 block(16, 16);
@@ -215,45 +262,50 @@ std::vector<cv::Mat> sweeping_plane_cuda(cam const &ref, std::vector<cam> const 
 		if (camera.YUV.empty())
 			throw std::runtime_error("Source camera has no image channels: " + camera.name);
 
-		printf("CUDA Cam: %s\n", camera.name.c_str());
+		printf("CUDA upload cam: %s\n", camera.name.c_str());
 
 		const size_t camera_pixel_count = static_cast<size_t>(camera.width) * camera.height;
 		cv::Mat cam_y = camera.YUV[0].isContinuous() ? camera.YUV[0] : camera.YUV[0].clone();
 
+		unsigned char *d_cam_image = nullptr;
 		CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_cam_image), camera_pixel_count * sizeof(unsigned char)));
 		CUDA_CHECK(cudaMemcpy(d_cam_image, cam_y.ptr<unsigned char>(), camera_pixel_count * sizeof(unsigned char), cudaMemcpyHostToDevice));
 
-		sweep_plane_kernel<<<grid, block>>>(
-			d_ref_image,
-			d_cam_image,
-			d_cost_cube,
-			d_ref,
-			make_device_cam(camera),
-			ZPlanes,
-			ZNear,
-			ZFar,
-			window);
-
-		CUDA_CHECK(cudaGetLastError());
-		CUDA_CHECK(cudaDeviceSynchronize());
-		CUDA_CHECK(cudaFree(d_cam_image));
-		d_cam_image = nullptr;
+		h_src_images.push_back(d_cam_image);
+		h_src_cams.push_back(make_device_cam(camera));
 	}
 
-	std::vector<float> h_cost_cube(cost_count);
-	CUDA_CHECK(cudaMemcpy(h_cost_cube.data(), d_cost_cube, cost_count * sizeof(float), cudaMemcpyDeviceToHost));
+	CUDA_CHECK(cudaMemcpyToSymbol(c_ref_cam, &d_ref, sizeof(DeviceCam)));
+	CUDA_CHECK(cudaMemcpyToSymbol(c_src_images, h_src_images.data(), h_src_images.size() * sizeof(unsigned char *)));
+	CUDA_CHECK(cudaMemcpyToSymbol(c_src_cams, h_src_cams.data(), h_src_cams.size() * sizeof(DeviceCam)));
+
+	printf("CUDA sweep: %zu source cams, %i depth planes\n", h_src_images.size(), ZPlanes);
+	sweep_plane_all_cameras_kernel<<<grid, block>>>(
+		d_ref_image,
+		d_cost_cube,
+		static_cast<int>(h_src_images.size()),
+		ZPlanes,
+		ZNear,
+		ZFar,
+		window);
+
+	CUDA_CHECK(cudaGetLastError());
+	CUDA_CHECK(cudaDeviceSynchronize());
 
 	std::vector<cv::Mat> cost_cube(ZPlanes);
 	for (int zi = 0; zi < ZPlanes; ++zi)
 	{
 		cost_cube[zi] = cv::Mat(ref.height, ref.width, CV_32FC1);
-		std::memcpy(
+		CUDA_CHECK(cudaMemcpy(
 			cost_cube[zi].ptr<float>(),
-			h_cost_cube.data() + static_cast<size_t>(zi) * pixel_count,
-			pixel_count * sizeof(float));
+			d_cost_cube + static_cast<size_t>(zi) * pixel_count,
+			pixel_count * sizeof(float),
+			cudaMemcpyDeviceToHost));
 	}
 
 	CUDA_CHECK(cudaFree(d_ref_image));
+	for (unsigned char *image : h_src_images)
+		CUDA_CHECK(cudaFree(image));
 	CUDA_CHECK(cudaFree(d_cost_cube));
 
 	return cost_cube;
