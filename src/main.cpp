@@ -285,7 +285,7 @@ int main()
 	wrap_test_vectorAdd();
 
 	// Sweeping algorithm for camera 0
-	std::vector<cv::Mat> cost_cube = sweeping_plane(cam_vector.at(0), cam_vector, 5);
+	std::vector<cv::Mat> cost_cube = sweeping_plane_cuda(cam_vector.at(0), cam_vector, 5);
 
 	// Use graph cut to generate depth map 
 	// Cleaner results, long compute time
@@ -293,12 +293,11 @@ int main()
 
 	// Find min cost and generate depth map
 	// Faster result, low quality
-	//cv::Mat depth = find_min(cost_cube);
+	// cv::Mat depth = find_min(cost_cube);
 
-
-	cv::namedWindow("Depth", cv::WINDOW_NORMAL);
-	cv::imshow("Depth", depth);
-	cv::waitKey(0);
+	// cv::namedWindow("Depth", cv::WINDOW_NORMAL);
+	// cv::imshow("Depth", depth);
+	// cv::waitKey(0);
 
 	cv::imwrite("./depth_map.png", depth);
 

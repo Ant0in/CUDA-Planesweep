@@ -93,6 +93,10 @@ target_link_libraries(${PROJECT_NAME}CUDA PRIVATE
     ${OpenCV_LIBS}
 )
 
+target_include_directories(${PROJECT_NAME}CUDA PRIVATE
+    ${OpenCV_INCLUDE_DIRS}
+)
+
 # -------------------------
 # Source files
 # -------------------------
