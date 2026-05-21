@@ -3,7 +3,7 @@
 <!-- pretty badges -->
 <div align="center">
   <img src="https://img.shields.io/badge/Language-Cuda-red" alt="Language Badge"/>
-  <img src="https://img.shields.io/badge/Version-0.1.0-blue" alt="Version Badge">
+  <img src="https://img.shields.io/badge/Version-0.1.1-blue" alt="Version Badge">
   <img src="https://img.shields.io/badge/License-MIT-dark_green.svg" alt="License Badge"/>
   <img src="https://img.shields.io/badge/School-ULB-yellow" alt="School Badge"/>
 </div>
@@ -21,8 +21,9 @@ Please refer to [**`doc/guidelines.pdf`**](doc/guidelines.pdf) or [**`doc/report
 
 ## 📜 Features
 
-- **CUDA kernels** for Planesweep algorithm.
+- **CUDA kernels** for Planesweep algorithm and argmin depth extraction.
 - Prints **GPU device info** using CUDA runtime API.
+- Benchmarks and pretty colours 🎨✨
 
 ## ⚙️ Installation
 
@@ -49,7 +50,7 @@ You also need to make sure you have **OpenCV** installed. You can use `pacman` o
     make  # you can use the clean rule to remove build files
     ```
 
-Alternatively, you can compile it by hand using `nvcc` if you are on **Windows**.
+Alternatively, you can compile it by hand using `nvcc` and `cmake` if you are on **Windows**.
 
 ## 📄 License
 
