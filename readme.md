@@ -15,7 +15,7 @@ This project is part of the **INFO-H503 course (ULB)**. It implements an **optim
 Please refer to [**`doc/guidelines.pdf`**](doc/guidelines.pdf) or [**`doc/reportH503.pdf`**](doc/reportH503.pdf) for more info.
 
 <div align="center">
-  <img src="./res/depth_map.png" alt="benchmark_run" width="80%" style="margin-top: 15px;" />
+  <img src="./res/depth_map_256.png" alt="benchmark_run" width="80%" style="margin-top: 15px;" />
   <p align="center"><b>Figure 1</b>: Planesweep with Graph-cut</p>
 </div>
 
