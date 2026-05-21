@@ -63,7 +63,7 @@ To run the **planesweep** algorithm, use:
 Make sure that **`Planesweep`** is in the same directory as the `/res` directory. Example of **valid** `/res` directory can be found at [**`/res`**](/res/).
 
 <div align="center">
-  <img src="./res/exec.png" alt="exec_run_fig2" width="60%" style="margin-top: 15px;" />
+  <img src="./res/fig2.png" alt="exec_run_fig2" width="60%" style="margin-top: 15px;" />
   <p align="center"><b>Figure 2</b>: Execution with <b>argmin depth-refinement</b></p>
 </div>
 
