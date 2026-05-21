@@ -51,6 +51,21 @@ You also need to make sure you have **OpenCV** installed. You can use `pacman` o
 
 Alternatively, you can compile it by hand using `nvcc` if you are on **Windows**.
 
+## 🛠️ Usage
+
+To run the **planesweep** algorithm, use:
+
+```sh
+./Planesweep min  # or use `gc` if you want to use grap-cut refinement
+```
+
+Make sure that **`Planesweep`** is in the same directory as the `/res` directory. Example of **valid** `/res` directory can be found at [**`/res`**](/res/).
+
+<div align="center">
+  <img src="./res/exec.png" alt="benchmark_run" width="60%" style="margin-top: 15px;" />
+  <p align="center"><b>Figure 2</b>: Execution with <b>argmin depth-refinement</b></p>
+</div>
+
 ## 📄 License
 
 This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for more details.
