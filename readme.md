@@ -3,7 +3,7 @@
 <!-- pretty badges -->
 <div align="center">
   <img src="https://img.shields.io/badge/Language-Cuda-red" alt="Language Badge"/>
-  <img src="https://img.shields.io/badge/Version-0.0.1-blue" alt="Version Badge">
+  <img src="https://img.shields.io/badge/Version-0.1.0-blue" alt="Version Badge">
   <img src="https://img.shields.io/badge/License-MIT-dark_green.svg" alt="License Badge"/>
   <img src="https://img.shields.io/badge/School-ULB-yellow" alt="School Badge"/>
 </div>
