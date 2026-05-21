@@ -5,6 +5,7 @@
 using namespace PlaneSweepKernel;
 
 #include <cstdio>
+#include <chrono>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -23,6 +24,8 @@ using cuda_utils::DeviceBuffer;
 
 namespace {
 
+using Clock = std::chrono::high_resolution_clock;
+
 /**
  * @brief Struct to hold the cost cube on the GPU along with some metadata about its dimensions, because we 
  * want to keep it there until we need to copy it back (in order to throw away most of the cube if we use argmin).
@@ -33,6 +36,10 @@ struct DeviceCostCube {
 	int height;
 	size_t pixel_count;
 };
+
+static double elapsed_ms(Clock::time_point start, Clock::time_point end) {
+	return std::chrono::duration<double, std::milli>(end - start).count();
+}
 
 }
 
@@ -331,6 +338,7 @@ static DeviceCostCube sweeping_plane_cuda_device(cam const &ref, std::vector<cam
 	h_src_images.reserve(expected_source_count);
 	h_src_cams.reserve(expected_source_count);
 
+	const auto upload_start = Clock::now();
 	cuda_utils::checkCuda(cudaMemcpy(d_ref_image.get(), ref_y.ptr<unsigned char>(), pixel_count * sizeof(unsigned char),
 		cudaMemcpyHostToDevice));
 
@@ -348,7 +356,7 @@ static DeviceCostCube sweeping_plane_cuda_device(cam const &ref, std::vector<cam
 	const int radius = window / 2;
 	const size_t shared_bytes = (block.x + 2 * radius) * (block.y + 2 * radius) * sizeof(unsigned char);
 
-	std::printf("[-] Uploading cam to GPU\n");
+	std::printf("%s[-] Uploading cameras to GPU\n", EA_DEFAULT);
 
 	// upload all source cameras and images
 	for (auto const &camera : cam_vector) {
@@ -369,7 +377,7 @@ static DeviceCostCube sweeping_plane_cuda_device(cam const &ref, std::vector<cam
 		h_src_images.push_back(d_cam_image);
 		h_src_cams.push_back(make_device_cam(camera));
 
-		std::printf("%s[✓] CUDA upload cam: %s\n%s", EA_GREEN, camera.name.c_str(), EA_DEFAULT);
+		std::printf("%s[✓] Uploaded source camera: %s%s\n", EA_GREEN, camera.name.c_str(), EA_DEFAULT);
 
 	}
 
@@ -378,9 +386,13 @@ static DeviceCostCube sweeping_plane_cuda_device(cam const &ref, std::vector<cam
 	cuda_utils::checkCuda(cudaMemcpyToSymbol(c_ref_cam, &d_ref, sizeof(DeviceCam)));
 	cuda_utils::checkCuda(cudaMemcpyToSymbol(c_src_images, h_src_images.data(), h_src_images.size() * sizeof(unsigned char *)));
 	cuda_utils::checkCuda(cudaMemcpyToSymbol(c_src_cams, h_src_cams.data(), h_src_cams.size() * sizeof(DeviceCam)));
+	const auto upload_end = Clock::now();
+	std::printf("%s[✓] CUDA camera uploaded in: %.3f ms%s\n\n", EA_GREEN, elapsed_ms(upload_start, upload_end), EA_DEFAULT);
+
+	std::printf("[-] Launching CUDA sweep: %zu source cams, %i depth planes\n", h_src_images.size(), ZPlanes);
 
 	// kernel invocation time let's go
-	printf("\n[-] CUDA sweep: %zu source cams, %i depth planes\n", h_src_images.size(), ZPlanes);
+	const auto sweep_start = Clock::now();
 	sweep_plane_all_cameras_kernel<<<grid, block, shared_bytes>>>(
 		d_ref_image.get(),
 		d_cost_cube.get(),
@@ -393,8 +405,8 @@ static DeviceCostCube sweeping_plane_cuda_device(cam const &ref, std::vector<cam
 	// cuda routine check smh
 	cuda_utils::checkCuda(cudaGetLastError());
 	cuda_utils::checkCuda(cudaDeviceSynchronize());
-
-	printf("%s[✓] CUDA sweep completed%s\n\n", EA_GREEN, EA_DEFAULT);
+	const auto sweep_end = Clock::now();
+	std::printf("%s[✓] CUDA sweep executed in: %.3f ms%s\n\n", EA_GREEN, elapsed_ms(sweep_start, sweep_end), EA_DEFAULT);
 
 	return DeviceCostCube{std::move(d_cost_cube), ref.width, ref.height, pixel_count};
 
@@ -448,8 +460,10 @@ cv::Mat PlaneSweepKernel::sweeping_plane_cuda_min_depth(cam const &ref, std::vec
 		(device_cost.width + block.x - 1) / block.x,
 		(device_cost.height + block.y - 1) / block.y);
 
+	std::printf("[-] Launching CUDA min-depth extraction\n");
+
 	// kernel invocation NOW! xd
-	printf("[-] CUDA min-depth extraction\n");
+	const auto min_start = Clock::now();
 	find_min_depth_kernel<<<grid, block>>>(
 		device_cost.cost_cube.get(),
 		d_depth.get(),
@@ -459,6 +473,8 @@ cv::Mat PlaneSweepKernel::sweeping_plane_cuda_min_depth(cam const &ref, std::vec
 
 	cuda_utils::checkCuda(cudaGetLastError());
 	cuda_utils::checkCuda(cudaDeviceSynchronize());
+	const auto min_end = Clock::now();
+	std::printf("%s[✓] CUDA min-depth extraction executed in: %.3f ms%s\n\n", EA_GREEN, elapsed_ms(min_start, min_end), EA_DEFAULT);
 
 	// copy the depth map back to the CPU as a single-channel 8-bit image, where the pixel values represent
 	// the best depth plane index (from 0 to ZPlanes-1 which I wont change it's 255 and it's very good)

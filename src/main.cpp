@@ -4,6 +4,7 @@
 #include "graph.h"
 
 #include <cstdio>
+#include <chrono>
 #include <vector>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -13,6 +14,16 @@
 
 #include <string>
 #include <climits>  // for SHRT_MAX
+
+namespace {
+
+using Clock = std::chrono::high_resolution_clock;
+
+static double elapsed_ms(Clock::time_point start, Clock::time_point end) {
+	return std::chrono::duration<double, std::milli>(end - start).count();
+}
+
+}
 
 /**
  * @brief Loads all camera images and attaches the hardcoded calibration parameters.
@@ -95,8 +106,6 @@ void depth_estimation_by_graph_cut_sWeight_add_nodes(Graph& g, std::vector<Graph
 cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_cube) {
 	//DO NOT TRY TO IMPLEMENT THIS FUNCTION ON THE GPU
 
-	printf("[-] CUDA graph-cut extraction\n");
-
 	const int zPlanes = cost_cube.size();
 	const int height = cost_cube[0].size().height;
 	const int width = cost_cube[0].size().width;
@@ -111,7 +120,7 @@ cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_c
 		m_aiEdgeCost[i] = smoothing_lambda * i;
 
 	for (int source = 0; source < zPlanes; ++source) {
-		std::cout << EA_GRAY << "[-] Depth Layer " << source << "/" << zPlanes - 1 << EA_DEFAULT << std::flush;
+		std::cout << EA_GRAY << "[-] Depth Layer " << source << "/" << zPlanes - 1 << " " << EA_DEFAULT << std::flush;
 		Graph g;
 		std::vector<Graph::node_id> nodes(height * width, nullptr);
 
@@ -157,8 +166,8 @@ cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_c
 		}
 		nodes.clear();
 
-		std::cout << " - done" << std::endl;
-		
+		std::cout << "- done" << std::endl;
+
 		/*
 		cv::namedWindow("labels", cv::WINDOW_NORMAL);
 		cv::imshow("labels", labels);
@@ -208,6 +217,7 @@ int main(int argc, char *argv[]) {
 
 	// pretty wow :3
 	cuda_utils::printDeviceInfo();
+	const auto total_start = Clock::now();
 
 	// choose between the min and graph-cut depth extraction methods
 	DepthMethod depth_method;
@@ -224,17 +234,20 @@ int main(int argc, char *argv[]) {
 
 	if (depth_method == DepthMethod::GraphCut) {
 		std::vector<cv::Mat> cost_cube = PlaneSweepKernel::sweeping_plane_cuda(cam_vector.at(0), cam_vector, 5);
+		std::printf("%s[-] Launching graph-cut refinement\n%s", EA_DEFAULT, EA_DEFAULT);
+		const auto graphcut_start = Clock::now();
 		depth = depth_estimation_by_graph_cut_sWeight(cost_cube);
+		const auto graphcut_end = Clock::now();
+		std::printf("%s[✓] Graph-cut depth extraction executed in: %.3f ms%s\n\n", EA_GREEN, elapsed_ms(graphcut_start, graphcut_end), EA_DEFAULT);
 	} else {
 		depth = PlaneSweepKernel::sweeping_plane_cuda_min_depth(cam_vector.at(0), cam_vector, 5);
 	}
 
-	printf("%s[✓] Depth estimation completed using method: %s%s\n", EA_GREEN, (depth_method == DepthMethod::GraphCut) ? "GraphCut" : "Min", EA_DEFAULT);
-
 	// write the depth map to disk and exit
 	// i removed the opencv visualization bcs on wsl it kinda breaks im not sure why
 	cv::imwrite("./depth_map.png", depth);
-	printf("%s[✓] Depth map written to disk as depth_map.png%s\n", EA_GREEN, EA_DEFAULT);
+	const auto total_end = Clock::now();
+	std::printf("%s[i] Total execution time:%s %.3f ms%s\n", EA_DEFAULT, EA_GRAY, elapsed_ms(total_start, total_end), EA_DEFAULT);
 
 	return EXIT_SUCCESS;
 
