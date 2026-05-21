@@ -12,8 +12,7 @@
 #include <opencv2/opencv.hpp>
 
 #include <string>
-
-#define SHRT_MAX 32767
+#include <climits>  // for SHRT_MAX
 
 /**
  * @brief Loads all camera images and attaches the hardcoded calibration parameters.
@@ -144,7 +143,7 @@ cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_c
 		m_aiEdgeCost[i] = smoothing_lambda * i;
 
 	for (int source = 0; source < zPlanes; ++source) {
-		printf("depth layer %i \n", source);
+		printf(">> Depth Layer %i \n", source);
 		Graph g;
 		std::vector<Graph::node_id> nodes(height * width, nullptr);
 
@@ -205,30 +204,57 @@ cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_c
 	return depth;
 }
 
+/** 
+ * @brief Enumerates the available depth extraction methods. 
+ * Used in main() to choose between the min and graph-cut methods with a command-line argument.
+*/
+enum class DepthMethod {
+    Min,
+    GraphCut
+};
+
+/**
+ * @brief Reads the command-line argument to choose the depth extraction method.
+ * @param arg Command-line argument string.
+ * @return DepthMethod enum value corresponding to the chosen method.
+ */
+DepthMethod read_method_from_arg(std::string const& arg) {
+    
+	if (arg == "min") return DepthMethod::Min;
+    if (arg == "graphcut" || arg == "gc") return DepthMethod::GraphCut;
+
+    std::cerr << "Usage: [min|graphcut|gc]" << std::endl;
+    std::exit(EXIT_FAILURE);
+	
+}
+
 /**
  * @brief Program entry point: load cameras, run CUDA planesweep, choose depth, write the image.
- * @return 0 when everything made it to the end without drama.
+ * Use command-line argument "min" for the cheap planesweep-only depth extraction, "graphcut" or "gc" for the graph-cut refinement.
+ * @return EXIT_SUCCESS when everything made it to the end without drama.
  */
 int main(int argc, char *argv[]) {
 
 	// pretty wow :3
 	cuda_utils::printDeviceInfo();
 
-	// Read cams from disk
-	std::vector<cam> cam_vector = read_cams("res");
+	// choose between the min and graph-cut depth extraction methods
+	DepthMethod depth_method;
+	if (argc > 1) {
+		depth_method = read_method_from_arg(argv[1]);
+	} else {
+		printf("[W] No depth extraction method specified, defaulting to min.");
+		depth_method = DepthMethod::Min;
+	}
 
-	// Sweeping algorithm from camera 0
+	// Read cams from disk and compute the cost cube with the CUDA planesweep kernel
+	std::vector<cam> cam_vector = read_cams("res");
 	std::vector<cv::Mat> cost_cube = PlaneSweepKernel::sweeping_plane_cuda(cam_vector.at(0), cam_vector, 5);
 
-	const bool use_graph_cut = true;
-	cv::Mat depth = use_graph_cut
+	// extract depth from the cost cube with the chosen method and write the result to disk
+	cv::Mat depth = (depth_method == DepthMethod::GraphCut)
 		? depth_estimation_by_graph_cut_sWeight(cost_cube)
 		: find_min(cost_cube);
-
-	// cv::namedWindow("Depth", cv::WINDOW_NORMAL);
-	// cv::imshow("Depth", depth);
-	// cv::waitKey(0);
-
 	cv::imwrite("./depth_map.png", depth);
 
 	return EXIT_SUCCESS;

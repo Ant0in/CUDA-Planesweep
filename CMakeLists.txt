@@ -33,6 +33,8 @@ cmake_minimum_required(VERSION 3.17)
 set(PROJECT_NAME "PlaneSweep")
 project(${PROJECT_NAME} LANGUAGES CXX CUDA)
 
+# I think it's possible to download OpenCV via CMake, because I remember doing something like that
+# from projet 2 in ba2, but I don't think it's very useful here tbh
 find_package(CUDAToolkit REQUIRED)
 find_package(OpenCV REQUIRED)
 
@@ -43,9 +45,7 @@ endif()
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# -------------------------
-# C++ / CUDA standards
-# -------------------------
+# C++ / CUDA standards (17 in this case)
 if(NOT DEFINED CMAKE_CXX_STANDARD)
     set(CMAKE_CXX_STANDARD 17)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -56,23 +56,15 @@ if(NOT DEFINED CMAKE_CUDA_STANDARD)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 endif()
 
-# -------------------------
-# GPU architectures (modern way)
-# -------------------------
+# CUDA architectures
 if(NOT CMAKE_CUDA_ARCHITECTURES)
     set(CMAKE_CUDA_ARCHITECTURES native)
 endif()
 
-# -------------------------
-# Kernels
-# -------------------------
-file(GLOB kernel_plane_sweep_headers
-    ./kernels/*.cuh
-)
+# Kernels library
 
-file(GLOB kernel_plane_sweep_src
-    ./kernels/*.cu
-)
+file(GLOB kernel_plane_sweep_headers ./kernels/*.cuh)
+file(GLOB kernel_plane_sweep_src ./kernels/*.cu)
 
 add_library(${PROJECT_NAME}CUDA
     ${kernel_plane_sweep_headers}
@@ -97,9 +89,8 @@ target_include_directories(${PROJECT_NAME}CUDA PRIVATE
     ${OpenCV_INCLUDE_DIRS}
 )
 
-# -------------------------
 # Source files
-# -------------------------
+
 file(GLOB source_files_planesweep
     ./src/*.cpp
     ./src/*.hpp
@@ -117,6 +108,8 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 
 target_compile_options(${PROJECT_NAME} PRIVATE
     $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-G;-lineinfo>
+    -Wno-register
+    -Wno-write-strings
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -129,7 +122,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     ${OpenCV_LIBS}
 )
 
-# -------------------------
-# Copy data
-# -------------------------
+# Finally copy some data to the build directory
+# this was in the original CMakeLists.txt but it's really not necessary since I copy the binary to the root of
+# the project, but I guess it doesn't hurt to keep it here
 file(COPY "res" DESTINATION ${CMAKE_BINARY_DIR})
+

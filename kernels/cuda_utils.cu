@@ -29,7 +29,7 @@ namespace cuda_utils {
 
         int deviceCount;
         checkCuda(cudaGetDeviceCount(&deviceCount));
-        std::cout << "[i] Number of CUDA devices: " << deviceCount << std::endl;
+        std::cout << "[i] Number of CUDA devices: " << deviceCount << "\n" << std::endl;
 
         // for each device I'll print some info, but yeah whatever who's rich enough to have multiple gpus lmao
         // i'm working on a fucking 1060 6gb, what are you expecting like a 5090 or something? im literally broke kekw
@@ -47,7 +47,7 @@ namespace cuda_utils {
             std::cout << ">> Max Grid Size: (" 
                       << deviceProp.maxGridSize[0] << ", "
                       << deviceProp.maxGridSize[1] << ", "
-                      << deviceProp.maxGridSize[2] << ")" 
+                      << deviceProp.maxGridSize[2] << ")\n" 
                       << std::endl;
 
         }

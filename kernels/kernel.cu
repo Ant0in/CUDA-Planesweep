@@ -236,8 +236,11 @@ std::vector<cv::Mat> PlaneSweepKernel::sweeping_plane_cuda(cam const &ref, std::
 	const size_t pixel_count = static_cast<size_t>(ref.width) * ref.height;
 	const size_t cost_count = pixel_count * ZPlanes;
 
+	// ref Y channel might not be continuous if the original image had padding or something (idk, seen that on reddit)
+	// so we make sure to have a continuous copy of it before uploading to the GPU, because it's easier to deal with in the kernel
 	cv::Mat ref_y = ref.YUV[0].isContinuous() ? ref.YUV[0] : ref.YUV[0].clone();
 
+	// Allocate GPU buffers for the reference image, the cost cube, and all source images and cameras, and upload the data
 	DeviceBuffer<unsigned char> d_ref_image(pixel_count);
 	DeviceBuffer<float> d_cost_cube(cost_count);
 	std::vector<DeviceBuffer<unsigned char>> src_image_buffers;
@@ -250,6 +253,8 @@ std::vector<cv::Mat> PlaneSweepKernel::sweeping_plane_cuda(cam const &ref, std::
 	cuda_utils::checkCuda(cudaMemcpy(d_ref_image.get(), ref_y.ptr<unsigned char>(), pixel_count * sizeof(unsigned char),
 		cudaMemcpyHostToDevice));
 
+	// about the blocks and grid sizes: we want to have enough threads to cover all pixels and depth planes, but we also
+	// want to have a good amount of threads per block to hide latency. 256 threads per block is usually a good choice for my 1060
 	const DeviceCam d_ref = make_device_cam(ref);
 	const dim3 block(32, 8, ZPlanesPerBlock);
 	const dim3 grid(
@@ -284,7 +289,8 @@ std::vector<cv::Mat> PlaneSweepKernel::sweeping_plane_cuda(cam const &ref, std::
 	cuda_utils::checkCuda(cudaMemcpyToSymbol(c_src_images, h_src_images.data(), h_src_images.size() * sizeof(unsigned char *)));
 	cuda_utils::checkCuda(cudaMemcpyToSymbol(c_src_cams, h_src_cams.data(), h_src_cams.size() * sizeof(DeviceCam)));
 
-	printf("[i] CUDA sweep: %zu source cams, %i depth planes\n", h_src_images.size(), ZPlanes);
+	// once cam data is on the GPU we can finally launch the kernel to do the sweeping
+	printf("[i] CUDA sweep: %zu source cams, %i depth planes\n\n", h_src_images.size(), ZPlanes);
 	sweep_plane_all_cameras_kernel<<<grid, block, shared_bytes>>>(
 		d_ref_image.get(),
 		d_cost_cube.get(),
@@ -294,9 +300,12 @@ std::vector<cv::Mat> PlaneSweepKernel::sweeping_plane_cuda(cam const &ref, std::
 		ZFar,
 		window);
 
+	// cuda routine check smh
 	cuda_utils::checkCuda(cudaGetLastError());
 	cuda_utils::checkCuda(cudaDeviceSynchronize());
 
+	// copy the cost cube back to the CPU and split it into separate Mats for each depth plane, because that's 
+	// what the rest of the pipeline expects (min / graph cut)
 	std::vector<cv::Mat> cost_cube(ZPlanes);
 	for (int zi = 0; zi < ZPlanes; ++zi)
 	{
