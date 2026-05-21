@@ -21,35 +21,32 @@
  */
 std::vector<cam> read_cams(std::string const &folder) {
 
-	// Init parameters
+	// init parameters and cameras
 	std::vector<params<double>> cam_params_vector = get_cam_params();
-
-	// Init cameras
 	std::vector<cam> cam_array(cam_params_vector.size());
-	for (int i = 0; i < cam_params_vector.size(); i++)
-	{
-		// Name
-		std::string name = folder + "/v" + std::to_string(i) + ".png";
 
-		// Read PNG file
+	for (int i = 0; i < cam_params_vector.size(); i++) {
+
+		std::string name = folder + "/v" + std::to_string(i) + ".png";  // cam format is v*.png
 		cv::Mat im_rgb = cv::imread(name);
 		cv::Mat im_yuv;
 		const int width = im_rgb.cols;
 		const int height = im_rgb.rows;
 
-		// Convert to YUV420
+		// convert to YUV420 because that's what the kernel uses (and because cpu implementation was doing it)
 		cv::cvtColor(im_rgb, im_yuv, cv::COLOR_BGR2YUV_I420);
 		const int size = width * height * 1.5; // YUV 420
 
 		std::vector<cv::Mat> YUV;
 		cv::split(im_rgb, YUV);
 
-		// Params
+		// params
 		cam_array.at(i) = cam(name, width, height, size, YUV, cam_params_vector.at(i));
 	}
 
 	return cam_array;
 
+	// ?? that was used for testing i'll keep it there just in case
 	// cv::Mat U(height / 2, width / 2, CV_8UC1, cam_array.at(0).image.data() + (int)(width * height * 1.25));
 	// cv::namedWindow("im", cv::WINDOW_NORMAL);
 	// cv::imshow("im", U);
@@ -57,40 +54,9 @@ std::vector<cam> read_cams(std::string const &folder) {
 
 }
 
-/**
- * @brief Cheap depth extraction by picking the lowest cost plane per pixel.
- * @param cost_cube Vector of cost images, one image for each depth plane.
- * @return 8-bit depth map where the pixel value is the chosen plane index.
- */
-cv::Mat find_min(std::vector<cv::Mat> const &cost_cube)
-{
-	const int zPlanes = cost_cube.size();
-	const int height = cost_cube[0].size().height;
-	const int width = cost_cube[0].size().width;
-
-	cv::Mat ret(height, width, CV_32FC1, 255.);
-	cv::Mat depth(height, width, CV_8U, 255);
-
-	for (int zi = 0; zi < zPlanes; zi++)
-	{
-		for (int y = 0; y < height; y++)
-		{
-			for (int x = 0; x < width; x++)
-			{
-				if (cost_cube[zi].at<float>(y, x) < ret.at<float>(y, x))
-				{
-					ret.at<float>(y, x) = cost_cube[zi].at<float>(y, x);
-					depth.at<u_char>(y, x) = zi;
-				}
-			}
-		}
-	}
-
-	return depth;
-}
-
 /* !! The next two function are used to perform the graph cut on the results
 DO NOT MODIFY THOSE FUNCTIONS - DO NOT TRY TO IMPLEMENT THEM ON THE GPU !!*/
+// ^^^^^^ ok
 
 /**
  * @brief Helper used by the graph-cut refinement to connect neighboring pixels.
@@ -129,6 +95,8 @@ void depth_estimation_by_graph_cut_sWeight_add_nodes(Graph& g, std::vector<Graph
 cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_cube) {
 	//DO NOT TRY TO IMPLEMENT THIS FUNCTION ON THE GPU
 
+	printf("[-] CUDA graph-cut extraction\n");
+
 	const int zPlanes = cost_cube.size();
 	const int height = cost_cube[0].size().height;
 	const int width = cost_cube[0].size().width;
@@ -143,7 +111,7 @@ cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_c
 		m_aiEdgeCost[i] = smoothing_lambda * i;
 
 	for (int source = 0; source < zPlanes; ++source) {
-		printf(">> Depth Layer %i \n", source);
+		std::cout << EA_GRAY << "[-] Depth Layer " << source << "/" << zPlanes - 1 << EA_DEFAULT << std::flush;
 		Graph g;
 		std::vector<Graph::node_id> nodes(height * width, nullptr);
 
@@ -161,7 +129,6 @@ cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_c
 			}
 		}
 
-		
 		for (int j = 0; j < height; j++) {
 			for (int i = 0; i < width; i++) {
 				const double cost_curr = m_aiEdgeCost[std::abs(labels(j, i) - source)];
@@ -189,6 +156,8 @@ cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_c
 			}
 		}
 		nodes.clear();
+
+		std::cout << " - done" << std::endl;
 		
 		/*
 		cv::namedWindow("labels", cv::WINDOW_NORMAL);
@@ -220,17 +189,19 @@ enum class DepthMethod {
  */
 DepthMethod read_method_from_arg(std::string const& arg) {
     
-	if (arg == "min") return DepthMethod::Min;
+	// simple arg parsing, could be more robust but it does the job for now
+	if (arg == "min" || arg == "m") return DepthMethod::Min;
     if (arg == "graphcut" || arg == "gc") return DepthMethod::GraphCut;
 
-    std::cerr << "Usage: [min|graphcut|gc]" << std::endl;
+    std::cerr << "Usage: [min/m|graphcut/gc]" << std::endl;
     std::exit(EXIT_FAILURE);
 	
 }
 
 /**
  * @brief Program entry point: load cameras, run CUDA planesweep, choose depth, write the image.
- * Use command-line argument "min" for the cheap planesweep-only depth extraction, "graphcut" or "gc" for the graph-cut refinement.
+ * Use command-line argument "min" or "m" for the cheap planesweep-only depth extraction, "graphcut" or "gc" 
+ * for the graph-cut refinement (much prettier but much slower).
  * @return EXIT_SUCCESS when everything made it to the end without drama.
  */
 int main(int argc, char *argv[]) {
@@ -243,19 +214,27 @@ int main(int argc, char *argv[]) {
 	if (argc > 1) {
 		depth_method = read_method_from_arg(argv[1]);
 	} else {
-		printf("[W] No depth extraction method specified, defaulting to min.");
+		printf("%s[w] No depth extraction method specified, defaulting to min.\n\n%s", EA_YELLOW, EA_DEFAULT);
 		depth_method = DepthMethod::Min;
 	}
 
-	// Read cams from disk and compute the cost cube with the CUDA planesweep kernel
+	// read cams from disk and compute the depth with the chosen method
 	std::vector<cam> cam_vector = read_cams("res");
-	std::vector<cv::Mat> cost_cube = PlaneSweepKernel::sweeping_plane_cuda(cam_vector.at(0), cam_vector, 5);
+	cv::Mat depth;
 
-	// extract depth from the cost cube with the chosen method and write the result to disk
-	cv::Mat depth = (depth_method == DepthMethod::GraphCut)
-		? depth_estimation_by_graph_cut_sWeight(cost_cube)
-		: find_min(cost_cube);
+	if (depth_method == DepthMethod::GraphCut) {
+		std::vector<cv::Mat> cost_cube = PlaneSweepKernel::sweeping_plane_cuda(cam_vector.at(0), cam_vector, 5);
+		depth = depth_estimation_by_graph_cut_sWeight(cost_cube);
+	} else {
+		depth = PlaneSweepKernel::sweeping_plane_cuda_min_depth(cam_vector.at(0), cam_vector, 5);
+	}
+
+	printf("%s[✓] Depth estimation completed using method: %s%s\n", EA_GREEN, (depth_method == DepthMethod::GraphCut) ? "GraphCut" : "Min", EA_DEFAULT);
+
+	// write the depth map to disk and exit
+	// i removed the opencv visualization bcs on wsl it kinda breaks im not sure why
 	cv::imwrite("./depth_map.png", depth);
+	printf("%s[✓] Depth map written to disk as depth_map.png%s\n", EA_GREEN, EA_DEFAULT);
 
 	return EXIT_SUCCESS;
 

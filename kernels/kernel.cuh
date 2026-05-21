@@ -60,6 +60,17 @@ namespace PlaneSweepKernel {
         int source_count, int z_planes, float z_near, float z_far, int window);
 
     /**
+     * @brief Extracts the lowest-cost depth for each pixel directly on the GPU.
+     * @param cost_cube Cost cube laid out as depth-major planes.
+     * @param depth Output 8-bit depth map in device memory.
+     * @param width Image width.
+     * @param height Image height.
+     * @param z_planes Total number of depth planes to scan.
+     */
+    __global__ void find_min_depth_kernel(float const *__restrict__ cost_cube, unsigned char *__restrict__ depth,
+        int width, int height, int z_planes);
+
+    /**
      * @brief Host wrapper that uploads images, launches the CUDA sweep, and brings the cost cube back.
      * @param ref Reference camera, aka the view we are estimating depth for.
      * @param cam_vector All cameras, including the reference one.
@@ -67,5 +78,14 @@ namespace PlaneSweepKernel {
      * @return A vector of OpenCV float images, one image per depth plane.
      */
     std::vector<cv::Mat> sweeping_plane_cuda(cam const &ref, std::vector<cam> const &cam_vector, int window = 3);
+
+    /**
+     * @brief Host wrapper for the fast path: sweep on GPU, find min on GPU, download only the depth map.
+     * @param ref Reference camera, aka the view we are estimating depth for.
+     * @param cam_vector All cameras, including the reference one.
+     * @param window Matching window size.
+     * @return 8-bit depth map where each pixel stores the best depth plane.
+     */
+    cv::Mat sweeping_plane_cuda_min_depth(cam const &ref, std::vector<cam> const &cam_vector, int window = 3);
     
 }

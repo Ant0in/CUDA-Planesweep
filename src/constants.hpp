@@ -6,9 +6,17 @@
 
 #include "cam_params.hpp"
 
+// magic numbers for the planesweep, will tweak for the report
 const float ZNear = 0.3f;
 const float ZFar = 1.1f;
 const int ZPlanes = 256;
+
+// some escape codes for pretty printing
+inline constexpr const char* EA_RED = "\033[31m";
+inline constexpr const char* EA_GREEN = "\033[32m";
+inline constexpr const char* EA_YELLOW = "\033[33m";
+inline constexpr const char* EA_DEFAULT = "\033[0m";
+inline constexpr const char* EA_GRAY = "\033[90m";
 
 typedef unsigned char u_char;
 
