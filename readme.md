@@ -12,13 +12,11 @@
 
 This project is part of the **INFO-H503 course (ULB)**. It implements an **optimized planesweep kernels** in `CUDA` and benchmarks their performance on your GPU.
 
-The goal is to study **memory vs compute-bound operations** and visualize performance trends (GFLOPS, bandwidth).
-
 Please refer to [**`doc/guidelines.pdf`**](doc/guidelines.pdf) or [**`doc/reportH503.pdf`**](doc/reportH503.pdf) for more info.
 
 <div align="center">
-  <img src="./res/v0.png" alt="benchmark_run" width="80%" style="margin-top: 15px;" />
-  <p align="center"><b>Figure 1</b>: Planesweep demo</p>
+  <img src="./res/depth_map.png" alt="benchmark_run" width="80%" style="margin-top: 15px;" />
+  <p align="center"><b>Figure 1</b>: Planesweep with Graph-cut</p>
 </div>
 
 ## 📜 Features
@@ -43,7 +41,7 @@ Please refer to [**`doc/guidelines.pdf`**](doc/guidelines.pdf) or [**`doc/report
     sudo pacman -S cuda
     ```
 
-You also need to make sure you have **OpenCV** installed.
+You also need to make sure you have **OpenCV** installed. You can use `pacman` or `apt` as well.
 
 3. Build using the provided `Makefile`:
 

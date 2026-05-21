@@ -59,7 +59,7 @@ __device__ __forceinline__ unsigned char PlaneSweepKernel::read_image_pixel(unsi
 }
 
 /**
- * @brief Computes the SAD-ish cost for a single pixel/depth/source-camera combo.
+ * @brief Computes the cost for a single pixel/depth/source-camera pair (is it really a pair if there is 3 elements?).
  * @param ref_tile Shared-memory tile of the reference image around the block.
  * @param src_image Source image on the GPU.
  * @param ref Reference camera parameters.
@@ -189,6 +189,7 @@ __global__ void PlaneSweepKernel::sweep_plane_all_cameras_kernel(unsigned char c
 		}
 	}
 
+	// make sure the whole tile is loaded before any thread tries to read from it
 	__syncthreads();
 
 	if (x >= c_ref_cam.width || y >= c_ref_cam.height || zi >= z_planes)

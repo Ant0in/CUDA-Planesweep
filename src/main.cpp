@@ -211,13 +211,16 @@ cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_c
  */
 int main(int argc, char *argv[]) {
 
+	// pretty wow :3
+	cuda_utils::printDeviceInfo();
+
 	// Read cams from disk
 	std::vector<cam> cam_vector = read_cams("res");
 
 	// Sweeping algorithm from camera 0
 	std::vector<cv::Mat> cost_cube = PlaneSweepKernel::sweeping_plane_cuda(cam_vector.at(0), cam_vector, 5);
 
-	const bool use_graph_cut = false;
+	const bool use_graph_cut = true;
 	cv::Mat depth = use_graph_cut
 		? depth_estimation_by_graph_cut_sWeight(cost_cube)
 		: find_min(cost_cube);
