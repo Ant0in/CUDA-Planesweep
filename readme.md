@@ -60,7 +60,7 @@ To run the **planesweep** algorithm, use:
 ./Planesweep min  # or use `gc` if you want to use grap-cut refinement
 ```
 
-Make sure that **`Planesweep`** is in the same directory as the `/res` directory. Example of **valid** `/res` directory can be found at [**`/res`**](/res/).
+Make sure that **`Planesweep`** is in the same directory as the `/res` directory. Example of **valid** `/res` directory can be found at [**`/res`**](/res/). It includes [**`cam_params.json`**](/res/cam_params.json) and cameras `v_.png` from **`0`** up to **`15`** at max.
 
 <div align="center">
   <img src="./res/fig2.png" alt="exec_run_fig2" width="60%" style="margin-top: 15px;" />
