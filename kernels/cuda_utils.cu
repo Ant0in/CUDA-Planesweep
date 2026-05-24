@@ -41,10 +41,14 @@ namespace cuda_utils {
 
             std::cout << "[i] Device " << i << ": " << deviceProp.name << std::endl;
             std::cout << EA_GRAY << ">> Total Global Memory: " << EA_DEFAULT << deviceProp.totalGlobalMem / (1024 * 1024) << " MB" << std::endl;
+            std::cout << EA_GRAY << ">> CUDA Cores: " << EA_DEFAULT << deviceProp.multiProcessorCount * 128 << std::endl; // 128 is the number of CUDA cores per SM for a 1060 lol kind of a hack
+            std::cout << EA_GRAY << ">> Compute Capability: " << EA_DEFAULT << deviceProp.major << "." << deviceProp.minor << std::endl;
             std::cout << EA_GRAY << ">> Shared Memory per Block: " << EA_DEFAULT << deviceProp.sharedMemPerBlock / 1024 << " KB" << std::endl;
             std::cout << EA_GRAY << ">> Registers per Block: " << EA_DEFAULT << deviceProp.regsPerBlock << std::endl;
             std::cout << EA_GRAY << ">> Warp Size: " << EA_DEFAULT << deviceProp.warpSize << std::endl;
             std::cout << EA_GRAY << ">> Max Threads per Block: " << EA_DEFAULT << deviceProp.maxThreadsPerBlock << std::endl;
+            std::cout << EA_GRAY << ">> Clock Rate: " << EA_DEFAULT << deviceProp.clockRate / 1000 << " MHz" << std::endl;
+            std::cout << EA_GRAY << ">> Multi-Processor Count: " << EA_DEFAULT << deviceProp.multiProcessorCount << std::endl;
             std::cout << EA_GRAY << ">> Max Grid Size: " << EA_DEFAULT << "("
                       << deviceProp.maxGridSize[0] << ", "
                       << deviceProp.maxGridSize[1] << ", "

@@ -184,6 +184,7 @@ __device__ float PlaneSweepKernel::compute_matching_cost(unsigned char const *__
 		}
 	}
 
+	// default to 255f if no sample was found which shouldnt really happen
 	return samples > 0 ? cost / static_cast<float>(samples) : 255.0f;
 
 }
